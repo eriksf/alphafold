@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG CUDA=11.0
-FROM nvidia/cuda:${CUDA}-base
+ARG CUDA=10.2
+FROM nvidia/cuda-ppc64le:${CUDA}-base
 # FROM directive resets ARGS, so we specify again (the value is retained if
 # previously set).
 ARG CUDA
@@ -25,12 +25,20 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
       build-essential \
       cmake \
       cuda-command-line-tools-${CUDA/./-} \
+      gcc-8 \
+      g++-8 \
       git \
       hmmer \
       kalign \
       tzdata \
       wget \
     && rm -rf /var/lib/apt/lists/*
+
+# set gcc-8 as the default
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 7 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 7 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 8 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-8 8
 
 # Compile HHsuite from source.
 RUN git clone --branch v3.3.0 https://github.com/soedinglab/hh-suite.git /tmp/hh-suite \
@@ -43,16 +51,22 @@ RUN cmake -DCMAKE_INSTALL_PREFIX=/opt/hhsuite .. \
 
 # Install Miniconda package manger.
 RUN wget -q -P /tmp \
-  https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
-    && bash /tmp/Miniconda3-latest-Linux-x86_64.sh -b -p /opt/conda \
-    && rm /tmp/Miniconda3-latest-Linux-x86_64.sh
+  https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-ppc64le.sh \
+    && bash /tmp/Miniconda3-latest-Linux-ppc64le.sh -b -p /opt/conda \
+    && rm /tmp/Miniconda3-latest-Linux-ppc64le.sh
+
+# Prepend PowerAI channel
+ENV PATH="/opt/conda/bin:$PATH"
+RUN conda config --system --prepend channels https://public.dhe.ibm.com/ibmdl/export/pub/software/server/ibm-ai/conda/ \
+    && conda config --system --set channel_priority strict
+# Accept IBM license
+ENV IBM_POWERAI_LICENSE_ACCEPT=yes
 
 # Install conda packages.
-ENV PATH="/opt/conda/bin:$PATH"
 RUN conda update -qy conda \
     && conda install -y -c conda-forge \
       openmm=7.5.1 \
-      cudatoolkit==${CUDA}.3 \
+      cudatoolkit==${CUDA}.89 \
       pdbfixer \
       pip \
       python=3.7
@@ -60,7 +74,7 @@ RUN conda update -qy conda \
 COPY . /app/alphafold
 RUN wget -q -P /app/alphafold/alphafold/common/ \
   https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
-
+#
 # Install pip packages.
 RUN pip3 install --upgrade pip \
     && pip3 install -r /app/alphafold/requirements.txt \
